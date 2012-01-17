@@ -19,17 +19,17 @@ type Board = M.Map Square Values
 type Values = [Int]
 type Square = String
 type Unit = [Square]
-squares = [r:c:[] | r<-rowNames, c<-colNames]
+squares = [ [r,c] | r<-rowNames, c<-colNames]
 
 unitlist :: [Unit]
 unitlist = rows ++ cols ++ boxes 
 
 rows,cols,boxes :: [Unit]
 -- alternative = map (\r -> map (\c -> r:c:[]) colNames) rowNames
-rows = [ [r:c:[] | c<-colNames ] | r<-rowNames]
-cols = [ [r:c:[] | r<-rowNames ] | c<-colNames]
+rows = [ [ [r,c] | c<-colNames ] | r<-rowNames]
+cols = [ [ [r,c] | r<-rowNames ] | c<-colNames]
 boxes = [cross c r | c<- ["ABC", "DEF", "GHI"], r<- ["123", "456", "789"]]
-cross as bs = [a:b:[] | a<-as, b<-bs]
+cross as bs = [ [a,b] | a<-as, b<-bs]
 
 units :: M.Map Square [Unit]
 units = M.fromList [(s, [u | u<-unitlist, s`elem` u]) | s<- squares]
@@ -38,7 +38,7 @@ unitsFor :: Square -> [Unit]
 unitsFor s = units M.! s
 
 peers :: M.Map Square [Square]
-peers = M.fromList $ [(s, ps s) | s <- squares]
+peers = M.fromList [(s, ps s) | s <- squares]
         where ps s = delete s $ nub $ concat (unitsFor s)
 peersFor :: Square -> [Square]
 peersFor s = peers M.! s
@@ -65,7 +65,7 @@ parseBoard str = foldl f (Just emptyBoard) singles
     f (Just b) (sq, vs) = error $ "Programming bug - filter sould have removed multi-value squares but got "++ show (sq, vs)
 
 display :: Board -> String
-display m = unlines $ map ( concat . map disp) $ wrap squares
+display m = unlines $ map ( concatMap disp) $ wrap squares
   where disp sq = printf "%11s" (concatMap show $ m M.! sq)
         wrap xs | length xs <= 9 = [xs]
                 | otherwise      = take 9 xs : (wrap . drop 9 ) xs
@@ -74,8 +74,7 @@ display m = unlines $ map ( concat . map disp) $ wrap squares
 ---------------------------------------------------------------------------------
 -- tb "Try to assign to Board"
 tb :: Square -> Int -> Board -> IO Board
-tb s d b = do
-  
+tb s d b = 
   case assign s d b of
     Just okBoard -> putStrLn ("assigned " ++ show (s, d)) >> pb okBoard
     Nothing      -> error "Couldn't assign"
@@ -99,12 +98,9 @@ demoBoard = parseBoard demo
 ---------------------------------------------------------------------------------
 main = do 
   pp "initial" $ parseBoard demo
-  pp "a1 assigned with 4" $ assign "A1" 4 (fromJust demoBoard)
-  pp "a2 assigned with 4" $ assign "A2" 1 (fromJust demoBoard)
-  pp "Try to assign A2 with 4" $ assign "A2" 4 (fromJust demoBoard)
   pp "Try to solve" $ solve demo
     where pp title (Just b) = bannerWith title >> putStrLn (display b)
-          pp title Nothing = bannerWith title >> putStrLn " failed to assign (Nothing)"
+          pp title Nothing = bannerWith title >> putStrLn " failed"
           bannerWith msg = let bn = ((take 80 . cycle) "=") in putStrLn bn >> putStrLn msg >> putStrLn bn 
           
 ---------------------------------------------------------------------------------
@@ -120,7 +116,7 @@ search (Just board) | allLengthOne = Just board --Finished!
 --     ## Chose the unfilled square s with the fewest possibilities
   where 
     allLengthOne = all ((==1) . length . (board M.!)) squares
-    (squareWithFewestChoices, choices) = minimumBy (comparing (length . snd)) $ [(s, vs) | s <- squares, let vs = board M.! s, length vs > 1]
+    (squareWithFewestChoices, choices) = minimumBy (comparing (length . snd)) [(s, vs) | s <- squares, let vs = board M.! s, length vs > 1]
 
 assign :: Square -> Int -> Board -> Maybe Board
 assign s d b = 
@@ -136,7 +132,7 @@ eliminate s (Just board) d =
   --   zero values remaining -> return Nothing (fail)
   --   one value remaining   -> try to "assign" that value (mutual recursion)
   --   n values remaining    -> return experimentally changed board
-  if not (d `elem` board M.! s)
+  if d `notElem` board M.! s
     then Just board
     else case delete d (board M.! s) of
            []        -> Nothing
