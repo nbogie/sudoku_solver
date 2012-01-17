@@ -1,5 +1,5 @@
 import Text.Printf(printf)
-import Data.List (delete, nub)
+import Data.List (delete, nub, (\\))
 import Data.Char (digitToInt)
 import Data.Maybe (isNothing, catMaybes, fromJust)
 import qualified Data.Map as M
@@ -51,6 +51,17 @@ parseBoard = M.fromList . parseBoardToList
 parseBoardToList ::  String -> [(String, Values)]
 parseBoardToList s = zip squares $ map parseChar s
 
+tb :: Square -> Int -> Board -> IO Board
+tb s d b = do
+  
+  case assign s d b of
+    Just okBoard -> putStrLn ("assigned " ++ show (s, d)) >> pb okBoard
+    Nothing      -> error "Couldn't assign"
+
+pb :: Board -> IO Board 
+pb b = do
+  putStrLn $ display b
+  return b
 display :: Board -> String
 display m = unlines $ map ( concat . map disp) $ wrap squares
   where disp sq = printf "%11s" (concatMap show $ m M.! sq)
@@ -59,28 +70,49 @@ display m = unlines $ map ( concat . map disp) $ wrap squares
 
 demo =  "4.....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......"
 
-b = parseBoard demo
+demoBoard = parseBoard demo
 
 main = do 
-  putStrLn $ show $ parseBoard demo
-  putStrLn $ display $ fromJust $ assign "A1" 4 b
-
+  pp "initial" $ Just (parseBoard demo)
+  pp "a1 assigned" $ assign "A1" 4 demoBoard
+  pp "A2 assigned" $ assign "A2" 4 demoBoard
+    where pp title (Just b) = bannerWith title >> putStrLn (display b)
+          pp title Nothing = bannerWith title >> putStrLn " failed to assign (Nothing)"
+          bannerWith msg = let bn = ((take 80 . cycle) "=") in putStrLn bn >> putStrLn msg >> putStrLn bn 
+          
 ---------------------------------------------------------------------------------
 -- SOLVER
 ---------------------------------------------------------------------------------
 assign :: Square -> Int -> Board -> Maybe Board
-assign s d m = if d `elem` m M.! s
-                 then eliminate s d m
-                 else Nothing 
+assign s d b = 
+  foldl (eliminate s) (Just b) otherVals
+    where otherVals = delete d $ b M.! s
   
 --eliminate a digit from the given square's peers
-eliminate ::  Square -> Int -> Board -> Maybe Board
-eliminate s d board = foldl elimOne (Just board) (peersFor s)
+eliminate ::  Square -> Maybe Board -> Int -> Maybe Board
+eliminate s Nothing d =      Nothing --TODO: this impl is only here so we can apply this fn to its own output, in a fold.
+eliminate s (Just board) d = 
+  -- if we've already removed the value at that square, do nothing. 
+  -- else remove it, experimentally and case the result
+  --   zero values remaining -> return Nothing (fail)
+  --   one value remaining   -> try to "assign" that value (mutual recursion)
+  --   n values remaining    -> return experimentally changed board
+  if not (d `elem` board M.! s)
+    then Just board
+    else case delete d (board M.! s) of
+           []        -> Nothing
+           [lastVal] -> let b' = M.insert s [lastVal] board  in  foldl elim (Just b') (peersFor s)
+                          where elim b p = eliminate p b lastVal
+                                --TODO: just switching the order of eliminate args
+                                -- el assign s lastVal board 
+           vs        -> Just $ M.insert s vs board
+
+{-  foldl elimOne (Just board) (peersFor s)
   where 
     elimOne :: Maybe Board -> Square -> Maybe Board
     elimOne Nothing p = Nothing
-    elimOne (Just m) p = case delete d (m M.! p) of
+    elimOne (Just b) p = case delete d (b M.! p) of
                           [] -> Nothing
-                          [o] -> assign p o (M.insert p [o] m)
-                          vs -> Just (M.insert p vs m)
-
+                          [o] -> assign p o (M.insert p [o] b)
+                          vs -> Just (M.insert p vs b)
+-}
