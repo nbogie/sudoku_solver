@@ -46,21 +46,22 @@ peersFor s = peers M.! s
 
 parseChar '.' = [1..9]
 parseChar d = [digitToInt d]
+parseBoard ::  String -> M.Map String Values
 parseBoard = M.fromList . parseBoardToList
 
 parseBoardToList ::  String -> [(String, Values)]
 parseBoardToList s = zip squares $ map parseChar s
 
 --make a board from a simple parsed board by trying to run full assignment of each of its filled-in values (detects conflict). Doesn't try to solve completely.
-readyBoard :: Board -> Maybe Board
-readyBoard b = foldl f (Just b) singles
+readyBoard :: String -> Maybe Board
+readyBoard str = foldl f (Just emptyBoard) singles
   where 
-    singles = filter ((==1) . length . snd) $ M.assocs b
+    emptyBoard = M.fromList . zip squares $ repeat [1..9]
+    singles = filter ((==1) . length . snd) $ parseBoardToList str
     f :: Maybe Board -> (Square, Values) -> Maybe Board
     f Nothing _ = Nothing
     f (Just b) (sq, [v]) = assign sq v b
     f (Just b) (sq, vs) = error $ "Programming bug - filter sould have removed multi-value squares but got "++ show (sq, vs)
-
 
 tb :: Square -> Int -> Board -> IO Board
 tb s d b = do
@@ -82,13 +83,14 @@ display m = unlines $ map ( concat . map disp) $ wrap squares
 demo =  "4.....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......"
 baddemo =  "44....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......"
 
-demoBoard = parseBoard demo
-badDemoBoard = parseBoard baddemo
+demoBoard = readyBoard demo
+badDemoBoard = readyBoard baddemo
 
 main = do 
-  pp "initial" $ Just (parseBoard demo)
-  pp "a1 assigned" $ assign "A1" 4 demoBoard
-  pp "A2 assigned" $ assign "A2" 4 demoBoard
+  pp "initial" $ readyBoard demo
+  pp "a1 assigned with 4" $ assign "A1" 4 (fromJust demoBoard)
+  pp "a2 assigned with 4" $ assign "A2" 1 (fromJust demoBoard)
+  pp "Try to assign A2 with 4" $ assign "A2" 4 (fromJust demoBoard)
     where pp title (Just b) = bannerWith title >> putStrLn (display b)
           pp title Nothing = bannerWith title >> putStrLn " failed to assign (Nothing)"
           bannerWith msg = let bn = ((take 80 . cycle) "=") in putStrLn bn >> putStrLn msg >> putStrLn bn 
@@ -114,30 +116,21 @@ eliminate s (Just board) d =
     then Just board
     else case delete d (board M.! s) of
            []        -> Nothing
-           vs@[lastVal] -> let b' = M.insert s vs board in step2 $ foldl elim (Just b') (peersFor s)
+           vs@[lastVal] -> let b' = M.insert s vs board in step2 s d $ foldl elim (Just b') (peersFor s)
                           where elim b p = eliminate p b lastVal
                                 --TODO: just switching the order of eliminate args
-           vs        -> step2 $ Just $ M.insert s vs board
+           vs        -> step2 s d $ Just $ M.insert s vs board
 
-    where 
-      step2 :: Maybe Board -> Maybe Board
-      step2 Nothing = Nothing
-      step2 (Just b2) = foldl unitTrim (Just b2) (unitsFor s)
-        where unitTrim Nothing _     = Nothing
-              unitTrim (Just b) unit = 
-                case findSquaresInUnitWithValue unit d of
-                       [] -> Nothing -- Contradiction: no place for this value in this unit
-                       -- d can only be in one place in unit; assign it there
-                       [oneSq] -> assign oneSq d b
-                       _ -> Just b
-                       where findSquaresInUnitWithValue u d = [s | s <- u, d `elem` (b M.! s)]
-
-{-  foldl elimOne (Just board) (peersFor s)
-  where 
-    elimOne :: Maybe Board -> Square -> Maybe Board
-    elimOne Nothing p = Nothing
-    elimOne (Just b) p = case delete d (b M.! p) of
-                          [] -> Nothing
-                          [o] -> assign p o (M.insert p [o] b)
-                          vs -> Just (M.insert p vs b)
--}
+-- could be inner, but it starts to be tricky avoiding either shadowing refs or using the wrong one, from the higher context: board, b, b', b2...
+-- This is safer but more verbose (we have to pass in the square and the digit where otherwise we would not)
+step2 :: Square -> Int -> Maybe Board -> Maybe Board
+step2 _ _ Nothing = Nothing
+step2 s d b2M = foldl unitTrim b2M (unitsFor s)
+  where unitTrim Nothing _     = Nothing
+        unitTrim (Just b) unit = 
+          case findSquaresInUnitWithValue unit d of
+                 [] -> Nothing -- Contradiction: no place for this value in this unit
+                 -- d can only be in one place in unit; assign it there
+                 [oneSq] -> assign oneSq d b
+                 _ -> Just b
+                 where findSquaresInUnitWithValue u d = [s | s <- u, d `elem` (b M.! s)]
