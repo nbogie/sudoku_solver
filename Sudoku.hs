@@ -1,7 +1,10 @@
 import Text.Printf(printf)
-import Data.List (delete, nub, (\\))
+import Data.List (delete, nub, (\\), minimumBy, find)
 import Data.Char (digitToInt)
-import Data.Maybe (isNothing, catMaybes, fromJust)
+import Data.Ord (comparing)
+import Data.Maybe (isNothing, catMaybes, isJust)
+import Data.Maybe (fromJust) --TODO: remove this evil (keep its use restricted to conveniences for demoing)
+import Control.Monad (join) -- join :: Monad m => m (m a) -> m a 
 import qualified Data.Map as M
 
 ---------------------------------------------------------------------------------
@@ -46,15 +49,13 @@ peersFor s = peers M.! s
 
 parseChar '.' = [1..9]
 parseChar d = [digitToInt d]
-parseBoard ::  String -> M.Map String Values
-parseBoard = M.fromList . parseBoardToList
 
 parseBoardToList ::  String -> [(String, Values)]
 parseBoardToList s = zip squares $ map parseChar s
 
 --make a board from a simple parsed board by trying to run full assignment of each of its filled-in values (detects conflict). Doesn't try to solve completely.
-readyBoard :: String -> Maybe Board
-readyBoard str = foldl f (Just emptyBoard) singles
+parseBoard :: String -> Maybe Board
+parseBoard str = foldl f (Just emptyBoard) singles
   where 
     emptyBoard = M.fromList . zip squares $ repeat [1..9]
     singles = filter ((==1) . length . snd) $ parseBoardToList str
@@ -63,6 +64,15 @@ readyBoard str = foldl f (Just emptyBoard) singles
     f (Just b) (sq, [v]) = assign sq v b
     f (Just b) (sq, vs) = error $ "Programming bug - filter sould have removed multi-value squares but got "++ show (sq, vs)
 
+display :: Board -> String
+display m = unlines $ map ( concat . map disp) $ wrap squares
+  where disp sq = printf "%11s" (concatMap show $ m M.! sq)
+        wrap xs | length xs <= 9 = [xs]
+                | otherwise      = take 9 xs : (wrap . drop 9 ) xs
+---------------------------------------------------------------------------------
+-- Helpers for experimenting in GHCI
+---------------------------------------------------------------------------------
+-- tb "Try to assign to Board"
 tb :: Square -> Int -> Board -> IO Board
 tb s d b = do
   
@@ -70,27 +80,29 @@ tb s d b = do
     Just okBoard -> putStrLn ("assigned " ++ show (s, d)) >> pb okBoard
     Nothing      -> error "Couldn't assign"
 
+-- pb "Print Board (IO)".  Returns the board so you can chain e.g. with "it".
 pb :: Board -> IO Board 
 pb b = do
   putStrLn $ display b
   return b
-display :: Board -> String
-display m = unlines $ map ( concat . map disp) $ wrap squares
-  where disp sq = printf "%11s" (concatMap show $ m M.! sq)
-        wrap xs | length xs <= 9 = [xs]
-                | otherwise      = take 9 xs : (wrap . drop 9 ) xs
 
+---------------------------------------------------------------------------------
+-- Demo data
+---------------------------------------------------------------------------------
 demo =  "4.....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......"
 baddemo =  "44....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......"
 
-demoBoard = readyBoard demo
-badDemoBoard = readyBoard baddemo
+demoBoard = parseBoard demo
 
+---------------------------------------------------------------------------------
+-- Main
+---------------------------------------------------------------------------------
 main = do 
-  pp "initial" $ readyBoard demo
+  pp "initial" $ parseBoard demo
   pp "a1 assigned with 4" $ assign "A1" 4 (fromJust demoBoard)
   pp "a2 assigned with 4" $ assign "A2" 1 (fromJust demoBoard)
   pp "Try to assign A2 with 4" $ assign "A2" 4 (fromJust demoBoard)
+  pp "Try to solve" $ solve demo
     where pp title (Just b) = bannerWith title >> putStrLn (display b)
           pp title Nothing = bannerWith title >> putStrLn " failed to assign (Nothing)"
           bannerWith msg = let bn = ((take 80 . cycle) "=") in putStrLn bn >> putStrLn msg >> putStrLn bn 
@@ -98,6 +110,18 @@ main = do
 ---------------------------------------------------------------------------------
 -- SOLVER
 ---------------------------------------------------------------------------------
+solve :: String -> Maybe Board
+solve str = search $ parseBoard str
+
+search :: Maybe Board -> Maybe Board
+search Nothing = Nothing --Failed earlier
+search (Just board) | allLengthOne = Just board --Finished!
+                    | otherwise    = join . find isJust . map (\d -> search $ assign squareWithFewestChoices d board) $ choices
+--     ## Chose the unfilled square s with the fewest possibilities
+  where 
+    allLengthOne = all ((==1) . length . (board M.!)) squares
+    (squareWithFewestChoices, choices) = minimumBy (comparing (length . snd)) $ [(s, vs) | s <- squares, let vs = board M.! s, length vs > 1]
+
 assign :: Square -> Int -> Board -> Maybe Board
 assign s d b = 
   foldl (eliminate s) (Just b) otherVals
@@ -121,8 +145,10 @@ eliminate s (Just board) d =
                                 --TODO: just switching the order of eliminate args
            vs        -> step2 s d $ Just $ M.insert s vs board
 
--- could be inner, but it starts to be tricky avoiding either shadowing refs or using the wrong one, from the higher context: board, b, b', b2...
--- This is safer but more verbose (we have to pass in the square and the digit where otherwise we would not)
+-- This could be scoped within eliminate, but it starts to be tricky avoiding either shadowing refs or using the wrong one
+-- from the higher context: e.g. board, b, b', b2...
+-- A top-level declaration is less prone to such errors for the beginner, 
+-- but more verbose (we have to pass in the square and the digit where otherwise we'd have access from the context).
 step2 :: Square -> Int -> Maybe Board -> Maybe Board
 step2 _ _ Nothing = Nothing
 step2 s d b2M = foldl unitTrim b2M (unitsFor s)
@@ -134,3 +160,13 @@ step2 s d b2M = foldl unitTrim b2M (unitsFor s)
                  [oneSq] -> assign oneSq d b
                  _ -> Just b
                  where findSquaresInUnitWithValue u d = [s | s <- u, d `elem` (b M.! s)]
+
+-- Further work: 
+-- 1) instead of reporting contradictions with Maybe Board, it might be more helpful to use Either Error Board.
+-- This way the nature of the contradiction could be reported back.
+-- 3) That the fns given to fold all have the same special case for Nothing suggests an abstraction.  Perhaps there's a monadic fold.
+-- 4) I don't know if fold is really what we want.  We want to short circuit as soon as we encounter a contradiction.
+--
+--
+-- DONE:
+-- 2) Finish the solver with search!
