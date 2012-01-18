@@ -1,6 +1,6 @@
 import Control.Monad (join) -- join :: Monad m => m (m a) -> m a 
 import Data.Char (digitToInt)
-import Data.List (delete, nub, (\\), minimumBy, find)
+import Data.List (delete, nub, (\\), minimumBy, maximumBy, find)
 import Data.Maybe (isNothing, catMaybes, isJust)
 import Data.Ord (comparing)
 import qualified Data.Map as M
@@ -51,6 +51,9 @@ parseChar d = [digitToInt d]
 parseBoardToList ::  String -> [(String, Values)]
 parseBoardToList s = zip squares $ map parseChar s
 
+parseBoardNoCP :: String -> M.Map Square Char
+parseBoardNoCP str = M.fromList $ zip squares str
+
 --make a board from a simple parsed board by trying to run full assignment of each of its filled-in values (detects conflict). Doesn't try to solve completely.
 parseBoard :: String -> Maybe Board
 parseBoard str = foldl f (Just emptyBoard) singles
@@ -62,11 +65,20 @@ parseBoard str = foldl f (Just emptyBoard) singles
     f (Just b) (sq, [v]) = assign sq v b
     f (Just b) (sq, vs) = error $ "Programming bug - filter sould have removed multi-value squares but got "++ show (sq, vs)
 
-display :: Board -> String
-display m = unlines $ map (concatMap disp) $ wrap squares
-  where disp sq = printf "%11s" (concatMap show $ m M.! sq)
+-- Can't use Show typeclass, as Board is just a type alias for now
+displayCore :: (a -> String) -> M.Map Square a -> String
+displayCore fn m = unlines $ map (concatMap disp) $ wrap squares
+  where disp sq = fn $ m M.! sq
         wrap xs | length xs <= 9 = [xs]
                 | otherwise      = take 9 xs : (wrap . drop 9) xs
+
+displayRaw :: M.Map Square Char -> String
+displayRaw = displayCore (:[]) 
+
+display :: Board -> String
+display b = displayCore (printf ("%"++show width++"s") . concatMap show) b
+  where width = worstLength + 1
+        worstLength = maximum $ map (length . (b M.!)) squares
 ---------------------------------------------------------------------------------
 -- Helpers for experimenting in GHCI
 ---------------------------------------------------------------------------------
@@ -94,9 +106,14 @@ demoBoard = parseBoard demo
 ---------------------------------------------------------------------------------
 -- Main
 ---------------------------------------------------------------------------------
-main = do 
-  pp "initial" $ parseBoard demo
-  pp "Try to solve" $ solve demo
+main = interact $ unlines . map solveAndShow . lines
+solveAndShow :: String -> String
+solveAndShow str = 
+  let input = parseBoardNoCP str
+  in displayRaw input ++ "\n\n" ++ maybe "Can't solve" display (solve str)
+                   
+  -- pp "initial" $ parseBoard demo
+  -- pp "Try to solve" $ solve demo
     where 
       pp title (Just b) = bannerWith title >> putStrLn (display b)
       pp title Nothing = bannerWith title >> putStrLn " failed"
