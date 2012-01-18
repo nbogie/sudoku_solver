@@ -17,3 +17,25 @@ If you are looking for a good sudoku solver in Haskell, you will find various on
 
 Norvig already links to a haskell implementation of his approach: http://www.haskell.org/pipermail/haskell-cafe/2007-August/031049.html
 
+
+Usage
+=====
+
+(Still here?)
+
+To use it as a library, see:
+
+    solve :: String -> Maybe Board
+    display :: Board -> String
+
+To use it as a stand-alone program:
+
+run the script and feed it puzzle definitions on stdin.
+
+    runhaskell Sudoku.hs < top95.txt
+
+Both cases require the same one-puzzle-per-line format as seen in Norvig's write-up.
+
+Example: 
+
+    4.....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......
