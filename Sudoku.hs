@@ -1,11 +1,10 @@
-import Text.Printf(printf)
-import Data.List (delete, nub, (\\), minimumBy, find)
-import Data.Char (digitToInt)
-import Data.Ord (comparing)
-import Data.Maybe (isNothing, catMaybes, isJust)
-import Data.Maybe (fromJust) --TODO: remove this evil (keep its use restricted to conveniences for demoing)
 import Control.Monad (join) -- join :: Monad m => m (m a) -> m a 
+import Data.Char (digitToInt)
+import Data.List (delete, nub, (\\), minimumBy, find)
+import Data.Maybe (isNothing, catMaybes, isJust)
+import Data.Ord (comparing)
 import qualified Data.Map as M
+import Text.Printf (printf)
 
 ---------------------------------------------------------------------------------
 -- Representing squares, units, peers
@@ -44,9 +43,8 @@ peersFor :: Square -> [Square]
 peersFor s = peers M.! s
 
 ---------------------------------------------------------------------------------
--- PArsing board
+-- Parsing board
 ---------------------------------------------------------------------------------
-
 parseChar '.' = [1..9]
 parseChar d = [digitToInt d]
 
@@ -65,10 +63,10 @@ parseBoard str = foldl f (Just emptyBoard) singles
     f (Just b) (sq, vs) = error $ "Programming bug - filter sould have removed multi-value squares but got "++ show (sq, vs)
 
 display :: Board -> String
-display m = unlines $ map ( concatMap disp) $ wrap squares
+display m = unlines $ map (concatMap disp) $ wrap squares
   where disp sq = printf "%11s" (concatMap show $ m M.! sq)
         wrap xs | length xs <= 9 = [xs]
-                | otherwise      = take 9 xs : (wrap . drop 9 ) xs
+                | otherwise      = take 9 xs : (wrap . drop 9) xs
 ---------------------------------------------------------------------------------
 -- Helpers for experimenting in GHCI
 ---------------------------------------------------------------------------------
@@ -99,9 +97,10 @@ demoBoard = parseBoard demo
 main = do 
   pp "initial" $ parseBoard demo
   pp "Try to solve" $ solve demo
-    where pp title (Just b) = bannerWith title >> putStrLn (display b)
-          pp title Nothing = bannerWith title >> putStrLn " failed"
-          bannerWith msg = let bn = ((take 80 . cycle) "=") in putStrLn bn >> putStrLn msg >> putStrLn bn 
+    where 
+      pp title (Just b) = bannerWith title >> putStrLn (display b)
+      pp title Nothing = bannerWith title >> putStrLn " failed"
+      bannerWith msg = let bn = ((take 80 . cycle) "=") in putStrLn bn >> putStrLn msg >> putStrLn bn 
           
 ---------------------------------------------------------------------------------
 -- SOLVER
@@ -148,14 +147,14 @@ eliminate s (Just board) d =
 step2 :: Square -> Int -> Maybe Board -> Maybe Board
 step2 _ _ Nothing = Nothing
 step2 s d b2M = foldl unitTrim b2M (unitsFor s)
-  where unitTrim Nothing _     = Nothing
-        unitTrim (Just b) unit = 
-          case findSquaresInUnitWithValue unit d of
-                 [] -> Nothing -- Contradiction: no place for this value in this unit
-                 -- d can only be in one place in unit; assign it there
-                 [oneSq] -> assign oneSq d b
-                 _ -> Just b
-                 where findSquaresInUnitWithValue u d = [s | s <- u, d `elem` (b M.! s)]
+  where 
+    unitTrim Nothing _     = Nothing
+    unitTrim (Just b) unit = 
+      case unitSquaresWithVal unit d of
+          []      -> Nothing          -- Contradiction: no place for this value in this unit.
+          [oneSq] -> assign oneSq d b -- d can only be in one place in unit; assign it there.
+          _       -> Just b
+        where unitSquaresWithVal u d = [s | s <- u, d `elem` (b M.! s)]
 
 -- Further work: 
 -- 1) instead of reporting contradictions with Maybe Board, it might be more helpful to use Either Error Board.
