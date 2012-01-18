@@ -48,23 +48,25 @@ peersFor s = peers M.! s
 parseChar '.' = [1..9]
 parseChar d = [digitToInt d]
 
-parseBoardToList ::  String -> [(String, Values)]
-parseBoardToList s = zip squares $ map parseChar s
-
 parseBoardNoCP :: String -> M.Map Square Char
 parseBoardNoCP str = M.fromList $ zip squares str
 
---make a board from a simple parsed board by trying to run full assignment of each of its filled-in values (detects conflict). Doesn't try to solve completely.
+--Make a board from a simple parsed board by trying to run full assignment of 
+--each of its filled-in values (detects conflict). Doesn't try to solve completely.
 parseBoard :: String -> Maybe Board
 parseBoard str = foldl f (Just emptyBoard) singles
   where 
     emptyBoard = M.fromList . zip squares $ repeat [1..9]
     singles = filter ((==1) . length . snd) $ parseBoardToList str
+    parseBoardToList s = zip squares $ map parseChar s
     f :: Maybe Board -> (Square, Values) -> Maybe Board
     f Nothing _ = Nothing
     f (Just b) (sq, [v]) = assign sq v b
     f (Just b) (sq, vs) = error $ "Programming bug - filter sould have removed multi-value squares but got "++ show (sq, vs)
 
+---------------------------------------------------------------------------------
+-- Displaying board (and partially parsed board)
+---------------------------------------------------------------------------------
 -- Can't use Show typeclass, as Board is just a type alias for now
 displayCore :: (a -> String) -> M.Map Square a -> String
 displayCore fn m = unlines $ map (concatMap disp) $ wrap squares
@@ -79,46 +81,14 @@ display :: Board -> String
 display b = displayCore (printf ("%"++show width++"s") . concatMap show) b
   where width = worstLength + 1
         worstLength = maximum $ map (length . (b M.!)) squares
----------------------------------------------------------------------------------
--- Helpers for experimenting in GHCI
----------------------------------------------------------------------------------
--- tb "Try to assign to Board"
-tb :: Square -> Int -> Board -> IO Board
-tb s d b = 
-  case assign s d b of
-    Just okBoard -> putStrLn ("assigned " ++ show (s, d)) >> pb okBoard
-    Nothing      -> error "Couldn't assign"
-
--- pb "Print Board (IO)".  Returns the board so you can chain e.g. with "it".
-pb :: Board -> IO Board 
-pb b = do
-  putStrLn $ display b
-  return b
 
 ---------------------------------------------------------------------------------
 -- Demo data
 ---------------------------------------------------------------------------------
-demo =  "4.....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......"
-baddemo =  "44....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......"
-
+demo = 
+  "4.....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......"
 demoBoard = parseBoard demo
 
----------------------------------------------------------------------------------
--- Main
----------------------------------------------------------------------------------
-main = interact $ unlines . map solveAndShow . lines
-solveAndShow :: String -> String
-solveAndShow str = 
-  let input = parseBoardNoCP str
-  in displayRaw input ++ "\n\n" ++ maybe "Can't solve" display (solve str)
-                   
-  -- pp "initial" $ parseBoard demo
-  -- pp "Try to solve" $ solve demo
-    where 
-      pp title (Just b) = bannerWith title >> putStrLn (display b)
-      pp title Nothing = bannerWith title >> putStrLn " failed"
-      bannerWith msg = let bn = ((take 80 . cycle) "=") in putStrLn bn >> putStrLn msg >> putStrLn bn 
-          
 ---------------------------------------------------------------------------------
 -- SOLVER
 ---------------------------------------------------------------------------------
@@ -128,11 +98,13 @@ solve str = search $ parseBoard str
 search :: Maybe Board -> Maybe Board
 search Nothing = Nothing --Failed earlier
 search (Just board) | allLengthOne = Just board --Finished!
-                    | otherwise    = join . find isJust . map (\d -> search $ assign squareWithFewestChoices d board) $ choices
---     ## Chose the unfilled square s with the fewest possibilities
+                    | otherwise    = 
+  join . find isJust . map (\d -> search $ assign squareWithFewestChoices d board) $ choices
   where 
     allLengthOne = all ((==1) . length . (board M.!)) squares
-    (squareWithFewestChoices, choices) = minimumBy (comparing (length . snd)) [(s, vs) | s <- squares, let vs = board M.! s, length vs > 1]
+    -- Choose the unfilled square s with the fewest possibilities
+    (squareWithFewestChoices, choices) = 
+      minimumBy (comparing (length . snd)) [(s, vs) | s <- squares, let vs = board M.! s, length vs > 1]
 
 assign :: Square -> Int -> Board -> Maybe Board
 assign s d b = 
@@ -141,7 +113,8 @@ assign s d b =
   
 --eliminate a digit from the given square's peers
 eliminate ::  Square -> Maybe Board -> Int -> Maybe Board
-eliminate s Nothing d =      Nothing --TODO: this impl is only here so we can apply this fn to its own output, in a fold.
+--TODO: use foldm instead supplying nothing and just impls.
+eliminate s Nothing d =      Nothing 
 eliminate s (Just board) d = 
   -- if we've already removed the value at that square, do nothing. 
   -- else remove it, experimentally and case the result
@@ -157,10 +130,12 @@ eliminate s (Just board) d =
                                 --TODO: just switching the order of eliminate args
            vs        -> step2 s d $ Just $ M.insert s vs board
 
--- This could be scoped within eliminate, but it starts to be tricky avoiding either shadowing refs or using the wrong one
--- from the higher context: e.g. board, b, b', b2...
+-- This could be scoped within eliminate, but it starts to be tricky
+-- avoiding either shadowing refs or using the wrong one from the higher
+-- context: e.g. board, b, b', b2...  
 -- A top-level declaration is less prone to such errors for the beginner, 
--- but more verbose (we have to pass in the square and the digit where otherwise we'd have access from the context).
+-- but more verbose (we have to pass in the square and the digit where 
+-- otherwise we'd have access from the context).
 step2 :: Square -> Int -> Maybe Board -> Maybe Board
 step2 _ _ Nothing = Nothing
 step2 s d b2M = foldl unitTrim b2M (unitsFor s)
@@ -173,11 +148,25 @@ step2 s d b2M = foldl unitTrim b2M (unitsFor s)
           _       -> Just b
         where unitSquaresWithVal u d = [s | s <- u, d `elem` (b M.! s)]
 
+---------------------------------------------------------------------------------
+-- Main
+---------------------------------------------------------------------------------
+main = interact $ unlines . map solveAndShow . lines
+  where
+  solveAndShow :: String -> String
+  solveAndShow str = displayRaw (parseBoardNoCP str) ++ 
+                     "\n\n" ++ maybe "Can't solve" display (solve str)
+
+---------------------------------------------------------------------------------
 -- Further work: 
--- 1) instead of reporting contradictions with Maybe Board, it might be more helpful to use Either Error Board.
--- This way the nature of the contradiction could be reported back.
--- 3) That the fns given to fold all have the same special case for Nothing suggests an abstraction.  Perhaps there's a monadic fold.
--- 4) I don't know if fold is really what we want.  We want to short circuit as soon as we encounter a contradiction.
+---------------------------------------------------------------------------------
+-- 1) instead of reporting contradictions with Maybe Board, 
+--    it might be more helpful to use Either Error Board.
+--    This way the nature of the contradiction could be reported back.
+-- 3) That the fns given to fold all have the same special case for Nothing 
+--    suggests an abstraction.  Perhaps there's a monadic fold.
+-- 4) I don't know if fold is really what we want.  We want to short circuit 
+--    as soon as we encounter a contradiction.
 --
 --
 -- DONE:
