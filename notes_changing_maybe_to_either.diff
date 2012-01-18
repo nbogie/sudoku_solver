@@ -1,0 +1,228 @@
+diff --git a/Sudoku.hs b/Sudoku.hs
+index e6fbc89..a6689d3 100644
+--- a/Sudoku.hs
++++ b/Sudoku.hs
+@@ -1,6 +1,7 @@
+ import Control.Monad (join, foldM) -- join :: Monad m => m (m a) -> m a 
+ import Data.Char (digitToInt)
+ import Data.List (delete, nub, minimumBy, maximumBy, find)
++import Data.Maybe (isJust)
+ import Data.Ord (comparing)
+ import qualified Data.Map as M
+ import Text.Printf (printf)
+@@ -11,8 +12,6 @@ import Text.Printf (printf)
+ rowNames = "ABCDEFGHI"
+ colNames = "123456789"
+ 
+-type Error = String
+-
+ type Board = M.Map Square Values
+ type Values = [Int]
+ type Square = String
+@@ -51,10 +50,10 @@ parseBoardNoCP str = M.fromList $ zip squares str
+ 
+ --Make a board from a simple parsed board by trying to run full assignment of 
+ --each of its filled-in values (detects conflict). Doesn't try to solve completely.
+-parseBoard :: String -> Either Error Board
++parseBoard :: String -> Maybe Board
+ parseBoard str = foldM asgn emptyBoard singles
+   where 
+-    asgn :: Board -> (Square, Int) -> Either Error Board
++    asgn :: Board -> (Square, Int) -> Maybe Board
+     asgn b (sq, v) = assign sq v b
+     emptyBoard = M.fromList . zip squares $ repeat [1..9]
+     singles = [(s,head vs) | (s,vs) <- parseBoardToList str, length vs == 1]
+@@ -88,64 +87,54 @@ demoBoard = parseBoard demo
+ ---------------------------------------------------------------------------------
+ -- SOLVER
+ ---------------------------------------------------------------------------------
+-solve :: String -> Either Error Board
++solve :: String -> Maybe Board
+ solve str = parseBoard str >>= search
+ 
+-instance Monad (Either e) where
+-  Left l >>= _f = Left l
+-  Right r >>= f = f r 
+-  return = Right
+-
+-search :: Board -> Either Error Board
+-search b | allLenOne = return b --Finished!
++search :: Board -> Maybe Board
++search b | allLenOne = Just b --Finished!
+          | otherwise = 
+-  case find isRight . map (\d -> assign squareWithFewestChoices d b >>= search) $ choices of
+-    Just (Right soln) -> Right soln
+-    Nothing -> Left "various searches failed (so various errors" 
++  join . find isJust . map (\d -> assign squareWithFewestChoices d b >>= search) $ choices
+   where 
+     allLenOne = all ((==1) . length . (b M.!)) squares
+     (squareWithFewestChoices, choices) = 
+       minimumBy (comparing (length . snd)) [(s, vs) | s <- squares, let vs = b M.! s, length vs > 1]
+-    isRight :: Either a b -> Bool
+-    isRight (Right _) = True
+-    isRight _ = False
+ 
+-assign :: Square -> Int -> Board -> Either Error Board
++assign :: Square -> Int -> Board -> Maybe Board
+ assign s d b = 
+   foldM (eliminate s) b otherVals
+     where otherVals = delete d $ b M.! s
+   
+ --eliminate a digit from the given square, propagating constraints.
+-eliminate ::  Square -> Board -> Int -> Either Error Board
++eliminate ::  Square -> Board -> Int -> Maybe Board
+ eliminate s b d = 
+   -- if we've already removed the value at that square, do nothing. 
+   if d `notElem` b M.! s
+-    then return b
+-    else return b >>= step1 s d >>= step2 s d
++    then Just b
++    else Just b >>= step1 s d >>= step2 s d
+ 
+ -- Remove digit from sq, and apply rule 1:
+ -- (1) If a square s is reduced to one value d2, 
+ -- then eliminate d2 from the peers.
+-step1 ::  Square -> Int -> Board -> Either Error Board
++step1 ::  Square -> Int -> Board -> Maybe Board
+ step1 s d b = 
+   case delete d (b M.! s) of
+-    []   -> Left $ "Contradiction " ++ show (s, d, "no possibles")
++    []   -> Nothing
+     [d2] -> foldM elim (M.insert s [d2] b) (peersFor s)
+               where elim b' p = eliminate p b' d2
+-    vs   -> return $ M.insert s vs b
++    vs   -> Just $ M.insert s vs b
+ 
+ -- Apply rule 2: 
+ -- (2) If a unit u is reduced to only one place for a value d, 
+ --     then put it there.
+-step2 :: Square -> Int -> Board -> Either Error Board
++step2 :: Square -> Int -> Board -> Maybe Board
+ step2 s d board = foldM unitTrim board (unitsFor s)
+   where 
+     unitTrim b unit = 
+       case unitSquaresWithVal unit d of
+-          []      -> Left $ "No squares in unit have value " ++ show (unit, d)
++          []      -> Nothing          -- Contradiction: no place for this value
+           [oneSq] -> assign oneSq d b -- d can only be in one place in unit; 
+                                       -- assign it there.
+-          _       -> return b
++          _       -> Just b
+         where unitSquaresWithVal u d = [s | s <- u, d `elem` (b M.! s)]
+ 
+ ---------------------------------------------------------------------------------
+@@ -155,7 +144,7 @@ main = interact $ unlines . map solveAndShow . lines
+   where
+   solveAndShow :: String -> String
+   solveAndShow str = displayRaw (parseBoardNoCP str) ++ 
+-                     "\n\n" ++ either ("Can't solve because "++) display (solve str)
++                     "\n\n" ++ maybe "Can't solve" display (solve str)
+ 
+ ---------------------------------------------------------------------------------
+ -- Further work: 
+
+[1mdiff --git a/Sudoku.hs b/Sudoku.hs[m
+[1mindex a6689d3..e6fbc89 100644[m
+[1m--- a/Sudoku.hs[m
+[1m+++ b/Sudoku.hs[m
+[36m@@ -1,7 +1,6 @@[m
+import Control.Monad (join, foldM) -- join :: Monad m => m (m a) -> m a [m
+import Data.Char (digitToInt)[m
+import Data.List (delete, nub, minimumBy, maximumBy, find)[m
+[31mimport Data.Maybe (isJust)[m
+import Data.Ord (comparing)[m
+import qualified Data.Map as M[m
+import Text.Printf (printf)[m
+[36m@@ -12,6 +11,8 @@[m [mimport Text.Printf (printf)[m
+rowNames = "ABCDEFGHI"[m
+colNames = "123456789"[m
+
+[32mtype Error = String[m
+
+type Board = M.Map Square Values[m
+type Values = [Int][m
+type Square = String[m
+[36m@@ -50,10 +51,10 @@[m [mparseBoardNoCP str = M.fromList $ zip squares str[m
+
+--Make a board from a simple parsed board by trying to run full assignment of [m
+--each of its filled-in values (detects conflict). Doesn't try to solve completely.[m
+parseBoard :: String -> [31mMaybe[m[32mEither Error[m Board
+parseBoard str = foldM asgn emptyBoard singles[m
+  where [m
+    asgn :: Board -> (Square, Int) -> [31mMaybe[m[32mEither Error[m Board
+    asgn b (sq, v) = assign sq v b[m
+    emptyBoard = M.fromList . zip squares $ repeat [1..9][m
+    singles = [(s,head vs) | (s,vs) <- parseBoardToList str, length vs == 1][m
+[36m@@ -87,54 +88,64 @@[m [mdemoBoard = parseBoard demo[m
+---------------------------------------------------------------------------------[m
+-- SOLVER[m
+---------------------------------------------------------------------------------[m
+solve :: String -> [31mMaybe[m[32mEither Error[m Board
+solve str = parseBoard str >>= search[m
+
+[32minstance Monad (Either e) where[m
+[32m  Left l >>= _f = Left l[m
+[32m  Right r >>= f = f r [m
+[32m  return = Right[m
+
+search :: Board -> [31mMaybe[m[32mEither Error[m Board
+search b | allLenOne = [31mJust[m[32mreturn[m b --Finished!
+         | otherwise = [m
+  [31mjoin .[m[32mcase[m find [31misJust[m[32misRight[m . map (\d -> assign squareWithFewestChoices d b >>= search) $ choices [32mof[m
+[32m    Just (Right soln) -> Right soln[m
+[32m    Nothing -> Left "various searches failed (so various errors"[m 
+  where [m
+    allLenOne = all ((==1) . length . (b M.!)) squares[m
+    (squareWithFewestChoices, choices) = [m
+      minimumBy (comparing (length . snd)) [(s, vs) | s <- squares, let vs = b M.! s, length vs > 1][m
+    [32misRight :: Either a b -> Bool[m
+[32m    isRight (Right _) = True[m
+[32m    isRight _ = False[m
+
+assign :: Square -> Int -> Board -> [31mMaybe[m[32mEither Error[m Board
+assign s d b = [m
+  foldM (eliminate s) b otherVals[m
+    where otherVals = delete d $ b M.! s[m
+  [m
+--eliminate a digit from the given square, propagating constraints.[m
+eliminate ::  Square -> Board -> Int -> [31mMaybe[m[32mEither Error[m Board
+eliminate s b d = [m
+  -- if we've already removed the value at that square, do nothing. [m
+  if d `notElem` b M.! s[m
+    then [31mJust[m[32mreturn[m b
+    else [31mJust[m[32mreturn[m b >>= step1 s d >>= step2 s d
+
+-- Remove digit from sq, and apply rule 1:[m
+-- (1) If a square s is reduced to one value d2, [m
+-- then eliminate d2 from the peers.[m
+step1 ::  Square -> Int -> Board -> [31mMaybe[m[32mEither Error[m Board
+step1 s d b = [m
+  case delete d (b M.! s) of[m
+    []   -> [31mNothing[m[32mLeft $ "Contradiction " ++ show (s, d, "no possibles")[m
+    [d2] -> foldM elim (M.insert s [d2] b) (peersFor s)[m
+              where elim b' p = eliminate p b' d2[m
+    vs   -> [31mJust[m[32mreturn[m $ M.insert s vs b
+
+-- Apply rule 2: [m
+-- (2) If a unit u is reduced to only one place for a value d, [m
+--     then put it there.[m
+step2 :: Square -> Int -> Board -> [31mMaybe[m[32mEither Error[m Board
+step2 s d board = foldM unitTrim board (unitsFor s)[m
+  where [m
+    unitTrim b unit = [m
+      case unitSquaresWithVal unit d of[m
+          []      -> [31mNothing          -- Contradiction: no place for this[m[32mLeft $ "No squares in unit have[m value [32m" ++ show (unit, d)[m
+          [oneSq] -> assign oneSq d b -- d can only be in one place in unit; [m
+                                      -- assign it there.[m
+          _       -> [31mJust[m[32mreturn[m b
+        where unitSquaresWithVal u d = [s | s <- u, d `elem` (b M.! s)][m
+
+---------------------------------------------------------------------------------[m
+[36m@@ -144,7 +155,7 @@[m [mmain = interact $ unlines . map solveAndShow . lines[m
+  where[m
+  solveAndShow :: String -> String[m
+  solveAndShow str = displayRaw (parseBoardNoCP str) ++ [m
+                     "\n\n" ++ [31mmaybe "Can't solve"[m[32meither ("Can't solve because "++)[m display (solve str)
+
+---------------------------------------------------------------------------------[m
+-- Further work: [m
