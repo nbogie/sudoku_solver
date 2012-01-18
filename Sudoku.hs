@@ -51,10 +51,10 @@ parseBoardNoCP str = M.fromList $ zip squares str
 --Make a board from a simple parsed board by trying to run full assignment of 
 --each of its filled-in values (detects conflict). Doesn't try to solve completely.
 parseBoard :: String -> Maybe Board
-parseBoard str = foldM f emptyBoard singles
+parseBoard str = foldM asgn emptyBoard singles
   where 
-    f :: Board -> (Square, Int) -> Maybe Board
-    f b (sq, v) = assign sq v b
+    asgn :: Board -> (Square, Int) -> Maybe Board
+    asgn b (sq, v) = assign sq v b
     emptyBoard = M.fromList . zip squares $ repeat [1..9]
     singles = [(s,head vs) | (s,vs) <- parseBoardToList str, length vs == 1]
     parseBoardToList s = zip squares $ map parseChar s
@@ -76,7 +76,6 @@ displayGridded fn m = unlines $ map (concatMap disp) $ wrap squares
   where disp sq = fn $ m M.! sq
         wrap xs | length xs <= 9 = [xs]
                 | otherwise      = take 9 xs : (wrap . drop 9) xs
-
 
 ---------------------------------------------------------------------------------
 -- Demo data
