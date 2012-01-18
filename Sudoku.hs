@@ -91,37 +91,37 @@ solve :: String -> Maybe Board
 solve str = parseBoard str >>= search
 
 search :: Board -> Maybe Board
-search board | allLenOne = Just board --Finished!
-             | otherwise = 
-  join . find isJust . map (\d -> assign squareWithFewestChoices d board >>= search) $ choices
+search b | allLenOne = Just b --Finished!
+         | otherwise = 
+  join . find isJust . map (\d -> assign squareWithFewestChoices d b >>= search) $ choices
   where 
-    allLenOne = all ((==1) . length . (board M.!)) squares
+    allLenOne = all ((==1) . length . (b M.!)) squares
     (squareWithFewestChoices, choices) = 
-      minimumBy (comparing (length . snd)) [(s, vs) | s <- squares, let vs = board M.! s, length vs > 1]
+      minimumBy (comparing (length . snd)) [(s, vs) | s <- squares, let vs = b M.! s, length vs > 1]
 
 assign :: Square -> Int -> Board -> Maybe Board
 assign s d b = 
   foldM (eliminate s) b otherVals
     where otherVals = delete d $ b M.! s
   
---eliminate a digit from the given square's peers
+--eliminate a digit from the given square, propagating constraints.
 eliminate ::  Square -> Board -> Int -> Maybe Board
-eliminate s board d = 
+eliminate s b d = 
   -- if we've already removed the value at that square, do nothing. 
-  if d `notElem` board M.! s
-    then Just board
-    else Just board >>= step1 s d >>= step2 s d
+  if d `notElem` b M.! s
+    then Just b
+    else Just b >>= step1 s d >>= step2 s d
 
 -- Remove digit from sq, and apply rule 1:
 -- (1) If a square s is reduced to one value d2, 
 -- then eliminate d2 from the peers.
 step1 ::  Square -> Int -> Board -> Maybe Board
-step1 s d board = 
-  case delete d (board M.! s) of
+step1 s d b = 
+  case delete d (b M.! s) of
     []   -> Nothing
-    [d2] -> foldM elim (M.insert s [d2] board) (peersFor s)
-              where elim b p = eliminate p b d2 --just order flip
-    vs   -> Just $ M.insert s vs board
+    [d2] -> foldM elim (M.insert s [d2] b) (peersFor s)
+              where elim b' p = eliminate p b' d2
+    vs   -> Just $ M.insert s vs b
 
 -- Apply rule 2: 
 -- (2) If a unit u is reduced to only one place for a value d, 
