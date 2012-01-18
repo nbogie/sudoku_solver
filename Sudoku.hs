@@ -1,4 +1,4 @@
-import Control.Monad (join) -- join :: Monad m => m (m a) -> m a 
+import Control.Monad (join, foldM) -- join :: Monad m => m (m a) -> m a 
 import Data.Char (digitToInt)
 import Data.List (delete, nub, (\\), minimumBy, maximumBy, find)
 import Data.Maybe (isNothing, catMaybes, isJust)
@@ -54,15 +54,13 @@ parseBoardNoCP str = M.fromList $ zip squares str
 --Make a board from a simple parsed board by trying to run full assignment of 
 --each of its filled-in values (detects conflict). Doesn't try to solve completely.
 parseBoard :: String -> Maybe Board
-parseBoard str = foldl f (Just emptyBoard) singles
+parseBoard str = foldM f emptyBoard singles
   where 
+    f :: Board -> (Square, Int) -> Maybe Board
+    f b (sq, v) = assign sq v b
     emptyBoard = M.fromList . zip squares $ repeat [1..9]
-    singles = filter ((==1) . length . snd) $ parseBoardToList str
+    singles = [(s,head vs) | (s,vs) <- parseBoardToList str, length vs == 1]
     parseBoardToList s = zip squares $ map parseChar s
-    f :: Maybe Board -> (Square, Values) -> Maybe Board
-    f Nothing _ = Nothing
-    f (Just b) (sq, [v]) = assign sq v b
-    f (Just b) (sq, vs) = error $ "Programming bug - filter sould have removed multi-value squares but got "++ show (sq, vs)
 
 ---------------------------------------------------------------------------------
 -- Displaying board (and partially parsed board)
