@@ -1,7 +1,7 @@
 import Control.Monad (join, foldM) -- join :: Monad m => m (m a) -> m a 
 import Data.Char (digitToInt)
-import Data.List (delete, nub, (\\), minimumBy, maximumBy, find)
-import Data.Maybe (isNothing, catMaybes, isJust)
+import Data.List (delete, nub, minimumBy, maximumBy, find)
+import Data.Maybe (isJust)
 import Data.Ord (comparing)
 import qualified Data.Map as M
 import Text.Printf (printf)
@@ -11,8 +11,6 @@ import Text.Printf (printf)
 ---------------------------------------------------------------------------------
 rowNames = "ABCDEFGHI"
 colNames = "123456789"
--- rowSquares :: [[Square]]
--- rowSquares = [Square r c | r <- rowNames, c <- colNames]
 
 type Board = M.Map Square Values
 type Values = [Int]
@@ -20,27 +18,26 @@ type Square = String
 type Unit = [Square]
 squares = [ [r,c] | r<-rowNames, c<-colNames]
 
-unitlist :: [Unit]
-unitlist = rows ++ cols ++ boxes 
-
 rows,cols,boxes :: [Unit]
--- alternative = map (\r -> map (\c -> r:c:[]) colNames) rowNames
 rows = [ [ [r,c] | c<-colNames ] | r<-rowNames]
 cols = [ [ [r,c] | r<-rowNames ] | c<-colNames]
 boxes = [cross c r | c<- ["ABC", "DEF", "GHI"], r<- ["123", "456", "789"]]
-cross as bs = [ [a,b] | a<-as, b<-bs]
 
-units :: M.Map Square [Unit]
-units = M.fromList [(s, [u | u<-unitlist, s`elem` u]) | s<- squares]
+cross as bs = [ [a,b] | a<-as, b<-bs]
 
 unitsFor :: Square -> [Unit]
 unitsFor s = units M.! s
+  where
+  units :: M.Map Square [Unit]
+  units = M.fromList [(s, [u | u<-unitList, s`elem` u]) | s<- squares]
+  unitList = rows ++ cols ++ boxes 
 
-peers :: M.Map Square [Square]
-peers = M.fromList [(s, ps s) | s <- squares]
-        where ps s = delete s $ nub $ concat (unitsFor s)
 peersFor :: Square -> [Square]
 peersFor s = peers M.! s
+  where
+  peers :: M.Map Square [Square]
+  peers = M.fromList [(s, ps s) | s <- squares]
+          where ps s = delete s $ nub $ concat (unitsFor s)
 
 ---------------------------------------------------------------------------------
 -- Parsing board
@@ -65,20 +62,21 @@ parseBoard str = foldM f emptyBoard singles
 ---------------------------------------------------------------------------------
 -- Displaying board (and partially parsed board)
 ---------------------------------------------------------------------------------
--- Can't use Show typeclass, as Board is just a type alias for now
-displayCore :: (a -> String) -> M.Map Square a -> String
-displayCore fn m = unlines $ map (concatMap disp) $ wrap squares
+-- Can't use Show typeclass, as Board is just a type alias
+display :: Board -> String
+display b = displayGridded (printf ("%"++show width++"s") . concatMap show) b
+  where width = worstLength + 1
+        worstLength = maximum $ map (length . (b M.!)) squares
+
+displayRaw :: M.Map Square Char -> String
+displayRaw = displayGridded (:[]) 
+
+displayGridded :: (a -> String) -> M.Map Square a -> String
+displayGridded fn m = unlines $ map (concatMap disp) $ wrap squares
   where disp sq = fn $ m M.! sq
         wrap xs | length xs <= 9 = [xs]
                 | otherwise      = take 9 xs : (wrap . drop 9) xs
 
-displayRaw :: M.Map Square Char -> String
-displayRaw = displayCore (:[]) 
-
-display :: Board -> String
-display b = displayCore (printf ("%"++show width++"s") . concatMap show) b
-  where width = worstLength + 1
-        worstLength = maximum $ map (length . (b M.!)) squares
 
 ---------------------------------------------------------------------------------
 -- Demo data
@@ -91,58 +89,52 @@ demoBoard = parseBoard demo
 -- SOLVER
 ---------------------------------------------------------------------------------
 solve :: String -> Maybe Board
-solve str = search $ parseBoard str
+solve str = parseBoard str >>= search
 
-search :: Maybe Board -> Maybe Board
-search Nothing = Nothing --Failed earlier
-search (Just board) | allLengthOne = Just board --Finished!
-                    | otherwise    = 
-  join . find isJust . map (\d -> search $ assign squareWithFewestChoices d board) $ choices
+search :: Board -> Maybe Board
+search board | allLenOne = Just board --Finished!
+             | otherwise = 
+  join . find isJust . map (\d -> assign squareWithFewestChoices d board >>= search) $ choices
   where 
-    allLengthOne = all ((==1) . length . (board M.!)) squares
-    -- Choose the unfilled square s with the fewest possibilities
+    allLenOne = all ((==1) . length . (board M.!)) squares
     (squareWithFewestChoices, choices) = 
       minimumBy (comparing (length . snd)) [(s, vs) | s <- squares, let vs = board M.! s, length vs > 1]
 
 assign :: Square -> Int -> Board -> Maybe Board
 assign s d b = 
-  foldl (eliminate s) (Just b) otherVals
+  foldM (eliminate s) b otherVals
     where otherVals = delete d $ b M.! s
   
 --eliminate a digit from the given square's peers
-eliminate ::  Square -> Maybe Board -> Int -> Maybe Board
---TODO: use foldm instead supplying nothing and just impls.
-eliminate s Nothing d =      Nothing 
-eliminate s (Just board) d = 
+eliminate ::  Square -> Board -> Int -> Maybe Board
+eliminate s board d = 
   -- if we've already removed the value at that square, do nothing. 
-  -- else remove it, experimentally and case the result
-  --   zero values remaining -> return Nothing (fail)
-  --   one value remaining   -> try to "assign" that value (mutual recursion)
-  --   n values remaining    -> return experimentally changed board
   if d `notElem` board M.! s
     then Just board
-    else case delete d (board M.! s) of
-           []        -> Nothing
-           vs@[lastVal] -> let b' = M.insert s vs board in step2 s d $ foldl elim (Just b') (peersFor s)
-                          where elim b p = eliminate p b lastVal
-                                --TODO: just switching the order of eliminate args
-           vs        -> step2 s d $ Just $ M.insert s vs board
+    else Just board >>= step1 s d >>= step2 s d
 
--- This could be scoped within eliminate, but it starts to be tricky
--- avoiding either shadowing refs or using the wrong one from the higher
--- context: e.g. board, b, b', b2...  
--- A top-level declaration is less prone to such errors for the beginner, 
--- but more verbose (we have to pass in the square and the digit where 
--- otherwise we'd have access from the context).
-step2 :: Square -> Int -> Maybe Board -> Maybe Board
-step2 _ _ Nothing = Nothing
-step2 s d b2M = foldl unitTrim b2M (unitsFor s)
+-- Remove digit from sq, and apply rule 1:
+-- (1) If a square s is reduced to one value d2, 
+-- then eliminate d2 from the peers.
+step1 ::  Square -> Int -> Board -> Maybe Board
+step1 s d board = 
+  case delete d (board M.! s) of
+    []   -> Nothing
+    [d2] -> foldM elim (M.insert s [d2] board) (peersFor s)
+              where elim b p = eliminate p b d2 --just order flip
+    vs   -> Just $ M.insert s vs board
+
+-- Apply rule 2: 
+-- (2) If a unit u is reduced to only one place for a value d, 
+--     then put it there.
+step2 :: Square -> Int -> Board -> Maybe Board
+step2 s d board = foldM unitTrim board (unitsFor s)
   where 
-    unitTrim Nothing _     = Nothing
-    unitTrim (Just b) unit = 
+    unitTrim b unit = 
       case unitSquaresWithVal unit d of
-          []      -> Nothing          -- Contradiction: no place for this value in this unit.
-          [oneSq] -> assign oneSq d b -- d can only be in one place in unit; assign it there.
+          []      -> Nothing          -- Contradiction: no place for this value
+          [oneSq] -> assign oneSq d b -- d can only be in one place in unit; 
+                                      -- assign it there.
           _       -> Just b
         where unitSquaresWithVal u d = [s | s <- u, d `elem` (b M.! s)]
 
@@ -161,11 +153,10 @@ main = interact $ unlines . map solveAndShow . lines
 -- 1) instead of reporting contradictions with Maybe Board, 
 --    it might be more helpful to use Either Error Board.
 --    This way the nature of the contradiction could be reported back.
--- 3) That the fns given to fold all have the same special case for Nothing 
---    suggests an abstraction.  Perhaps there's a monadic fold.
 -- 4) I don't know if fold is really what we want.  We want to short circuit 
 --    as soon as we encounter a contradiction.
 --
---
 -- DONE:
 -- 2) Finish the solver with search!
+-- 3) That the fns given to fold all have the same special case for Nothing 
+--    suggests an abstraction.  Perhaps there's a monadic fold.
