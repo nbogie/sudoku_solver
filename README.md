@@ -39,3 +39,9 @@ Both cases require the same one-puzzle-per-line format as seen in Norvig's write
 Example: 
 
     4.....8.5.3..........7......2.....6.....8.4......1.......6.3.7.5..2.....1.4......
+
+Performance
+===========
+No attention has been given to performance since porting.  Anecdotally, it takes just over 1 second to run the 95 hard problems in the top95.txt input file, on an 4 yr-old laptop.
+
+I haven't tried it on Norvig's identified slow puzzles, but on those it should suffer in the same way his impl does.
