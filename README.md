@@ -45,3 +45,8 @@ Performance
 No attention has been given to performance since porting.  Anecdotally, it takes just over 1 second to run the 95 hard problems in the top95.txt input file, on an 4 yr-old laptop.
 
 I haven't tried it on Norvig's identified slow puzzles, but on those it should suffer in the same way his impl does.
+
+About the problem
+=================
+
+Sudoku can be understood as a constraint satisfaction problem.  A good introductory video is here: http://www.youtube.com/watch?v=nfkX5W8-oBU
